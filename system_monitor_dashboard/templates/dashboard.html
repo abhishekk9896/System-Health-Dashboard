@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>System Health Dashboard</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --powerbi-primary: #00A1F1;
+      --powerbi-dark: #2B2B2B;
+      --powerbi-card: #F8F8F8;
+    }
+    
+    body {
+      background-color: #F3F3F3 !important;
+      font-family: 'Segoe UI', sans-serif !important;
+    }
+    
+    .card {
+      border-radius: 4px !important;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.12) !important;
+      border: none !important;
+      background: white !important;
+      margin-bottom: 0 !important;
+      height: 100%;
+    }
+    
+    .card-body {
+      padding: 12px 16px !important;
+    }
+    
+    .panel-title {
+      font-weight: 600 !important;
+      color: var(--powerbi-dark);
+      font-size: 14px;
+      margin-bottom: 8px !important;
+    }
+    
+    .stat {
+      font-size: 12px;
+      color: #666;
+      margin-top: 4px;
+    }
+    
+    /* Chart Containers */
+    canvas {
+      width: 100% !important;
+      height: 180px !important;
+      margin: 4px 0;
+    }
+    
+    /* Tables */
+    .table-responsive {
+      max-height: 180px;
+      border: 1px solid #eee;
+    }
+    
+    .table {
+      font-size: 12px;
+      margin-bottom: 0;
+    }
+    
+    .table th {
+      background: #f5f5f5;
+      font-weight: 600;
+    }
+    
+    /* Grid Spacing */
+    .row {
+      margin-bottom: 12px !important;
+    }
+    
+    .col-md-3, .col-md-4 {
+      padding: 0 8px !important;
+    }
+    
+    /* Power BI-like Status Indicators */
+    .status-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+    
+    .status-up { background: #4CAF50; }
+    .status-down { background: #F44336; }
+    .status-warn { background: #FFC107; }
+  </style>
+</head>
+<body class="hold-transition sidebar-mini">
+<div class="wrapper p-2" style="background-color: #F3F3F3;">
+  <!-- Top Row -->
+  <div class="row">
+    <!-- Uptime & Availability -->
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">UPTIME</div>
+          <canvas id="uptimeGauge"></canvas>
+          <div class="d-flex justify-content-between">
+            <div class="stat">Last 24h: <span id="downtimeTimeline">0 events</span></div>
+            <div class="stat">
+              <span class="status-indicator status-up"></span>HTTP
+              <span class="status-indicator status-up"></span>DB
+              <span class="status-indicator status-up"></span>Cache
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CPU Usage -->
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">CPU UTILIZATION</div>
+          <canvas id="cpuChart"></canvas>
+          <div class="stat">Peak: <span id="cpuPeak">--%</span> | Avg: <span id="cpuAvg">--%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Memory & Swap -->
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">MEMORY USAGE</div>
+          <canvas id="memChart"></canvas>
+          <div class="stat">RAM: <span id="memCurrent">--%</span> | Swap: <span id="swapCurrent">--%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Network Health -->
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">NETWORK</div>
+          <canvas id="netChart"></canvas>
+          <div class="stat">Latency: <span id="netLatency">-- ms</span> | Throughput: <span id="netThroughput">-- MB/s</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Middle Row -->
+  <div class="row">
+    <!-- Disk Usage -->
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">DISK UTILIZATION</div>
+          <canvas id="diskDonut"></canvas>
+          <div class="stat">I/O: <span id="diskIO">-- MB/s read / -- MB/s write</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error Rates -->
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">ERROR TRENDS</div>
+          <canvas id="errorLine"></canvas>
+          <div class="stat">Last hour: <span id="errorCount">0</span> errors | Critical: <span id="criticalCount">0</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Service Health -->
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">SERVICE HEALTH</div>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Service</th><th>Status</th><th>Response</th></tr></thead>
+              <tbody id="serviceTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom Row -->
+  <div class="row">
+    <!-- Active Alerts -->
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">ACTIVE ALERTS</div>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Time</th><th>Severity</th><th>Message</th></tr></thead>
+              <tbody id="alertsTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Historical Trends -->
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">PERFORMANCE TRENDS</div>
+          <canvas id="historyArea"></canvas>
+          <div class="stat">Peak: <span id="peakTime">--:--</span> | Avg: <span id="avgUtil">--%</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Processes -->
+    <div class="col-md-4">
+      <div class="card">
+        <div class="card-body">
+          <div class="panel-title">TOP PROCESSES</div>
+          <div class="table-responsive">
+            <table class="table table-sm">
+              <thead><tr><th>Process</th><th>CPU</th><th>Memory</th></tr></thead>
+              <tbody id="procTable"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Your existing JavaScript remains unchanged
+let uptimeGauge, cpuLine, memLine, diskDonut, errorLine, errorPie;
+
+function initCharts() {
+  uptimeGauge = new Chart(document.getElementById('uptimeGauge'), {
+    type: 'doughnut',
+    data: {labels:['Up','Down'], datasets:[{data:[0,100],backgroundColor:['#00a65a','#f56954']}]},
+    options:{cutout:'80%',plugins:{tooltip:{enabled:false}}}
+  });
+  cpuLine = new Chart(document.getElementById('cpuChart'), {type:'line',data:{labels:[],datasets:[{label:'CPU %',data:[],borderColor:'#00A1F1', tension: 0.3, fill: true, backgroundColor: 'rgba(0, 161, 241, 0.1)'}]}});
+  memLine = new Chart(document.getElementById('memChart'), {type:'line',data:{labels:[],datasets:[
+    {label:'Memory %',data:[],borderColor:'#8BC34A', tension: 0.3},
+    {label:'Swap %',data:[],borderColor:'#FF9800', tension: 0.3}
+  ]}});
+  diskDonut = new Chart(document.getElementById('diskDonut'), {type:'doughnut',data:{labels:[],datasets:[{data:[],backgroundColor:['#00A1F1','#8BC34A','#FF9800','#F44336']}]}});
+  errorLine = new Chart(document.getElementById('errorLine'), {type:'line',data:{labels:[],datasets:[{label:'Errors',data:[],borderColor:'#F44336', tension: 0.3}]}});
+  netChart = new Chart(document.getElementById('netChart'), {type:'line',data:{labels:[],datasets:[
+    {label:'In',data:[],borderColor:'#4CAF50', tension: 0.3},
+    {label:'Out',data:[],borderColor:'#9C27B0', tension: 0.3}
+  ]}});
+  historyArea = new Chart(document.getElementById('historyArea'), {type:'line',data:{labels:[],datasets:[
+    {label:'CPU',data:[],borderColor:'#00A1F1', fill: true, backgroundColor: 'rgba(0, 161, 241, 0.1)', tension: 0.3},
+    {label:'Memory',data:[],borderColor:'#8BC34A', fill: true, backgroundColor: 'rgba(139, 195, 74, 0.1)', tension: 0.3}
+  ]}});
+}
+
+// Rest of your existing JavaScript...
+</script>
+
+<script>
+  initCharts();
+  
+  function updateDashboard(data) {
+    // CPU Chart
+    const now = new Date().toLocaleTimeString();
+    cpuLine.data.labels.push(now);
+    cpuLine.data.datasets[0].data.push(data.cpu_usage);
+    if (cpuLine.data.labels.length > 20) {
+      cpuLine.data.labels.shift();
+      cpuLine.data.datasets[0].data.shift();
+    }
+    cpuLine.update();
+    document.getElementById("cpuPeak").innerText = data.cpu_usage + "%";
+    document.getElementById("cpuAvg").innerText = data.cpu_usage + "%";
+  
+    // Memory Chart
+    memLine.data.labels.push(now);
+    memLine.data.datasets[0].data.push(data.memory.percent);
+    memLine.data.datasets[1].data.push(data.memory.swap.percent);
+    if (memLine.data.labels.length > 20) {
+      memLine.data.labels.shift();
+      memLine.data.datasets[0].data.shift();
+      memLine.data.datasets[1].data.shift();
+    }
+    memLine.update();
+    document.getElementById("memCurrent").innerText = data.memory.percent + "%";
+    document.getElementById("swapCurrent").innerText = data.memory.swap.percent + "%";
+  
+    // Network Chart
+    netChart.data.labels.push(now);
+    netChart.data.datasets[0].data.push((data.network.bytes_recv / 1024 / 1024).toFixed(2));
+    netChart.data.datasets[1].data.push((data.network.bytes_sent / 1024 / 1024).toFixed(2));
+    if (netChart.data.labels.length > 20) {
+      netChart.data.labels.shift();
+      netChart.data.datasets[0].data.shift();
+      netChart.data.datasets[1].data.shift();
+    }
+    netChart.update();
+    document.getElementById("netLatency").innerText = "N/A";
+    document.getElementById("netThroughput").innerText = (
+      (data.network.bytes_recv + data.network.bytes_sent) / 1024 / 1024
+    ).toFixed(2) + " MB";
+  
+    // Disk Donut
+    diskDonut.data.labels = ["Used", "Free"];
+    diskDonut.data.datasets[0].data = [data.disk.percent, 100 - data.disk.percent];
+    diskDonut.update();
+    document.getElementById("diskIO").innerText = 
+      (data.disk.read_bytes / 1024 / 1024).toFixed(1) + " MB read / " +
+      (data.disk.write_bytes / 1024 / 1024).toFixed(1) + " MB write";
+  
+    // Uptime Gauge
+    uptimeGauge.data.datasets[0].data = [100, 0];
+    uptimeGauge.update();
+    document.getElementById("downtimeTimeline").innerText = data.uptime;
+  
+    // Top Processes Table
+    const procTable = document.getElementById("procTable");
+    procTable.innerHTML = "";
+    data.top_processes.forEach(proc => {
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${proc.name}</td>
+        <td>${proc.cpu.toFixed(1)}%</td>
+        <td>${(proc.memory * 100).toFixed(2)}%</td>
+      `;
+      procTable.appendChild(row);
+    });
+  
+    // Trends Area (History)
+    historyArea.data.labels.push(now);
+    historyArea.data.datasets[0].data.push(data.cpu_usage);
+    historyArea.data.datasets[1].data.push(data.memory.percent);
+    if (historyArea.data.labels.length > 20) {
+      historyArea.data.labels.shift();
+      historyArea.data.datasets[0].data.shift();
+      historyArea.data.datasets[1].data.shift();
+    }
+    historyArea.update();
+    document.getElementById("peakTime").innerText = now;
+    document.getElementById("avgUtil").innerText = data.cpu_usage.toFixed(1) + "%";
+  }
+  
+  // Fetch data every 5 seconds
+  setInterval(() => {
+    fetch("/api/system")
+      .then(res => res.json())
+      .then(updateDashboard)
+      .catch(err => console.error("Failed to update dashboard:", err));
+  }, 5000);
+  </script>
+  
+
+
+</body>
+<!-- Sidebar -->
+
+</html>
